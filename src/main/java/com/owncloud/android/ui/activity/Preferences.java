@@ -130,214 +130,47 @@ public class Preferences extends PreferenceActivity
         super.onCreate(savedInstanceState);
         addPreferencesFromResource(R.xml.preferences);
 
-        ActionBar actionBar = getDelegate().getSupportActionBar();
-        actionBar.setDisplayHomeAsUpEnabled(true);
-        ThemeUtils.setColoredTitle(actionBar, getString(R.string.actionbar_settings));
-        actionBar.setBackgroundDrawable(new ColorDrawable(ThemeUtils.primaryColor()));
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            getWindow().setStatusBarColor(ThemeUtils.primaryDarkColor());
-        }
-
-        Drawable backArrow = getResources().getDrawable(R.drawable.ic_arrow_back);
-        actionBar.setHomeAsUpIndicator(ThemeUtils.tintDrawable(backArrow, ThemeUtils.fontColor()));
-
-        int accentColor = ThemeUtils.primaryAccentColor();
-
         // retrieve user's base uri
         setupBaseUri();
 
-        // For adding content description tag to a title field in the action bar
-        int actionBarTitleId = getResources().getIdentifier("action_bar_title", "id", "android");
-        View actionBarTitleView = getWindow().getDecorView().findViewById(actionBarTitleId);
-        if (actionBarTitleView != null) {    // it's null in Android 2.x
-            getWindow().getDecorView().findViewById(actionBarTitleId).
-                    setContentDescription(getString(R.string.actionbar_settings));
-        }
-        // Load package info
-        String temp;
-        try {
-            PackageInfo pkg = getPackageManager().getPackageInfo(getPackageName(), 0);
-            temp = pkg.versionName;
-        } catch (NameNotFoundException e) {
-            temp = "";
-            Log_OC.e(TAG, "Error while showing about dialog", e);
-        }
-        final String appVersion = temp;
+        setupActionBar();
 
         // Register context menu for list of preferences.
         registerForContextMenu(getListView());
 
-        // General
-        PreferenceCategory preferenceCategoryGeneral = (PreferenceCategory) findPreference("general");
-        preferenceCategoryGeneral.setTitle(ThemeUtils.getColoredTitle(getString(R.string.prefs_category_general),
-                accentColor));
-
-        // Synced folders
-        PreferenceCategory preferenceCategorySyncedFolders =
-                (PreferenceCategory) findPreference("synced_folders_category");
-        preferenceCategorySyncedFolders.setTitle(ThemeUtils.getColoredTitle(getString(R.string.drawer_synced_folders),
-                accentColor));
+        int accentColor = ThemeUtils.primaryAccentColor();
+        String appVersion = getAppVersion();
         PreferenceScreen preferenceScreen = (PreferenceScreen) findPreference("preference_screen");
 
-        if (!getResources().getBoolean(R.bool.syncedFolder_light)) {
-            preferenceScreen.removePreference(preferenceCategorySyncedFolders);
-        } else {
-            // Upload on WiFi
-            final ArbitraryDataProvider arbitraryDataProvider = new ArbitraryDataProvider(getContentResolver());
-            final Account account = AccountUtils.getCurrentOwnCloudAccount(getApplicationContext());
+        // General
+        setupGeneralCategory(accentColor);
 
-            final SwitchPreference pUploadOnWifiCheckbox = (SwitchPreference) findPreference("synced_folder_on_wifi");
-            pUploadOnWifiCheckbox.setChecked(
-                    arbitraryDataProvider.getBooleanValue(account, SYNCED_FOLDER_LIGHT_UPLOAD_ON_WIFI));
+        // Auto upload
+        setupAutoUploadCategory(accentColor, preferenceScreen);
 
-            pUploadOnWifiCheckbox.setOnPreferenceClickListener(new OnPreferenceClickListener() {
-                @Override
-                public boolean onPreferenceClick(Preference preference) {
-                    arbitraryDataProvider.storeOrUpdateKeyValue(account.name, SYNCED_FOLDER_LIGHT_UPLOAD_ON_WIFI,
-                            String.valueOf(pUploadOnWifiCheckbox.isChecked()));
+        // Details
+        setupDetailsCategory(accentColor, preferenceScreen);
 
-                    return true;
-                }
-            });
+        // More
+        setupMoreCategory(accentColor, appVersion);
 
-            Preference pSyncedFolder = findPreference("synced_folders_configure_folders");
-            if (pSyncedFolder != null) {
-                if (getResources().getBoolean(R.bool.syncedFolder_light)
-                        && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                    pSyncedFolder.setOnPreferenceClickListener(new OnPreferenceClickListener() {
-                        @Override
-                        public boolean onPreferenceClick(Preference preference) {
-                            Intent syncedFoldersIntent = new Intent(getApplicationContext(), SyncedFoldersActivity.class);
-                            syncedFoldersIntent.putExtra(SyncedFoldersActivity.EXTRA_SHOW_SIDEBAR, false);
-                            startActivity(syncedFoldersIntent);
-                            return true;
-                        }
-                    });
-                } else {
-                    preferenceCategorySyncedFolders.removePreference(pSyncedFolder);
-                }
-            }
+        // About
+        setupAboutCategory(accentColor, appVersion);
+    }
+
+    private String getAppVersion() {
+        String appVersion;
+        try {
+            PackageInfo pkg = getPackageManager().getPackageInfo(getPackageName(), 0);
+            appVersion = pkg.versionName;
+        } catch (NameNotFoundException e) {
+            appVersion = "";
+            Log_OC.e(TAG, "Error while retrieving app version", e);
         }
+        return appVersion;
+    }
 
-        PreferenceCategory preferenceCategoryDetails = (PreferenceCategory) findPreference("details");
-        preferenceCategoryDetails.setTitle(ThemeUtils.getColoredTitle(getString(R.string.prefs_category_details),
-                accentColor));
-
-        boolean fPassCodeEnabled = getResources().getBoolean(R.bool.passcode_enabled);
-        pCode = (SwitchPreference) findPreference(PassCodeActivity.PREFERENCE_SET_PASSCODE);
-        if (pCode != null && fPassCodeEnabled) {
-            pCode.setOnPreferenceChangeListener(new OnPreferenceChangeListener() {
-                @Override
-                public boolean onPreferenceChange(Preference preference, Object newValue) {
-                    Intent i = new Intent(getApplicationContext(), PassCodeActivity.class);
-                    Boolean incoming = (Boolean) newValue;
-
-                    i.setAction(
-                            incoming ? PassCodeActivity.ACTION_REQUEST_WITH_RESULT :
-                                    PassCodeActivity.ACTION_CHECK_WITH_RESULT
-                    );
-
-                    startActivityForResult(i, incoming ? ACTION_REQUEST_PASSCODE :
-                            ACTION_CONFIRM_PASSCODE);
-
-                    // Don't update just yet, we will decide on it in onActivityResult
-                    return false;
-                }
-            });
-        } else {
-            preferenceCategoryDetails.removePreference(pCode);
-        }
-
-        boolean fPrintEnabled = getResources().getBoolean(R.bool.fingerprint_enabled);
-        fPrint = (SwitchPreference) findPreference(PREFERENCE_USE_FINGERPRINT);
-        if (fPrint != null) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                if (FingerprintActivity.isFingerprintCapable(MainApp.getAppContext()) && fPrintEnabled) {
-                    fPrint.setOnPreferenceChangeListener(new OnPreferenceChangeListener() {
-                        @Override
-                        public boolean onPreferenceChange(Preference preference, Object newValue) {
-                            Boolean incoming = (Boolean) newValue;
-
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                                if (FingerprintActivity.isFingerprintReady(MainApp.getAppContext())) {
-                                    SharedPreferences appPrefs =
-                                            PreferenceManager.getDefaultSharedPreferences(getApplicationContext());
-                                    SharedPreferences.Editor editor = appPrefs.edit();
-                                    editor.putBoolean("use_fingerprint", incoming);
-                                    editor.apply();
-                                    return true;
-                                } else {
-                                    if (incoming) {
-                                        Toast.makeText(
-                                                MainApp.getAppContext(),
-                                                R.string.prefs_fingerprint_notsetup,
-                                                Toast.LENGTH_LONG)
-                                                .show();
-                                        fPrint.setChecked(false);
-                                    }
-                                    SharedPreferences appPrefs =
-                                            PreferenceManager.getDefaultSharedPreferences(getApplicationContext());
-                                    SharedPreferences.Editor editor = appPrefs.edit();
-                                    editor.putBoolean("use_fingerprint", false);
-                                    editor.apply();
-                                    return false;
-                                }
-                            } else {
-                                return false;
-                            }
-                        }
-                    });
-                    if (!FingerprintActivity.isFingerprintReady(MainApp.getAppContext())) {
-                        fPrint.setChecked(false);
-                    }
-
-                } else {
-                    preferenceCategoryDetails.removePreference(fPrint);
-                }
-            } else {
-                preferenceCategoryDetails.removePreference(fPrint);
-            }
-        }
-
-        boolean fShowHiddenFilesEnabled = getResources().getBoolean(R.bool.show_hidden_files_enabled);
-        mShowHiddenFiles = (SwitchPreference) findPreference("show_hidden_files");
-
-        if (fShowHiddenFilesEnabled) {
-            mShowHiddenFiles.setOnPreferenceClickListener(new OnPreferenceClickListener() {
-                @Override
-                public boolean onPreferenceClick(Preference preference) {
-                    SharedPreferences appPrefs =
-                            PreferenceManager.getDefaultSharedPreferences(getApplicationContext());
-                    SharedPreferences.Editor editor = appPrefs.edit();
-                    editor.putBoolean("show_hidden_files_pref", mShowHiddenFiles.isChecked());
-                    editor.apply();
-                    return true;
-                }
-            });
-        } else {
-            preferenceCategoryDetails.removePreference(mShowHiddenFiles);
-        }
-
-        mExpertMode = (SwitchPreference) findPreference("expert_mode");
-
-        if (getResources().getBoolean(R.bool.syncedFolder_light)) {
-            preferenceCategoryDetails.removePreference(mExpertMode);
-        } else {
-            mExpertMode = (SwitchPreference) findPreference("expert_mode");
-            mExpertMode.setOnPreferenceClickListener(new OnPreferenceClickListener() {
-                @Override
-                public boolean onPreferenceClick(Preference preference) {
-                    SharedPreferences appPrefs =
-                            PreferenceManager.getDefaultSharedPreferences(getApplicationContext());
-                    SharedPreferences.Editor editor = appPrefs.edit();
-                    editor.putBoolean("expert_mode", mExpertMode.isChecked());
-                    editor.apply();
-                    return true;
-                }
-            });
-        }
-
+    private void setupMoreCategory(int accentColor, String appVersion) {
         PreferenceCategory preferenceCategoryMore = (PreferenceCategory) findPreference("more");
         preferenceCategoryMore.setTitle(ThemeUtils.getColoredTitle(getString(R.string.prefs_category_more),
                 accentColor));
@@ -384,10 +217,6 @@ public class Preferences extends PreferenceActivity
             } else {
                 preferenceCategoryMore.removePreference(pContactsBackup);
             }
-        }
-
-        if (!fShowHiddenFilesEnabled && !fPrintEnabled && !fPassCodeEnabled) {
-            preferenceScreen.removePreference(preferenceCategoryDetails);
         }
 
         boolean helpEnabled = getResources().getBoolean(R.bool.help_enabled);
@@ -515,43 +344,14 @@ public class Preferences extends PreferenceActivity
             }
         }
 
-        mPrefStoragePath = (ListPreference) findPreference(PreferenceKeys.STORAGE_PATH);
-        if (mPrefStoragePath != null) {
-            StoragePoint[] storageOptions = DataStorageProvider.getInstance().getAvailableStoragePoints();
-            String[] entries = new String[storageOptions.length];
-            String[] values = new String[storageOptions.length];
-            for (int i = 0; i < storageOptions.length; ++i) {
-                entries[i] = storageOptions[i].getDescription();
-                values[i] = storageOptions[i].getPath();
-            }
-            mPrefStoragePath.setEntries(entries);
-            mPrefStoragePath.setEntryValues(values);
+        loadExternalSettingLinks(preferenceCategoryMore);
+    }
 
-            mPrefStoragePath.setOnPreferenceChangeListener(new OnPreferenceChangeListener() {
-                @Override
-                public boolean onPreferenceChange(Preference preference, Object newValue) {
-                    String newPath = (String) newValue;
-                    if (mStoragePath.equals(newPath)) {
-                        return true;
-                    }
-
-                    StorageMigration storageMigration = new StorageMigration(Preferences.this, mStoragePath, newPath);
-
-                    storageMigration.setStorageMigrationProgressListener(Preferences.this);
-
-                    storageMigration.migrate();
-
-                    return false;
-                }
-            });
-        }
-
-        // About category
+    private void setupAboutCategory(int accentColor, String appVersion) {
         PreferenceCategory preferenceCategoryAbout = (PreferenceCategory) findPreference("about");
         preferenceCategoryAbout.setTitle(ThemeUtils.getColoredTitle(getString(R.string.prefs_category_about),
                 accentColor));
 
-        /* About App */
         pAboutApp = findPreference("about_app");
         if (pAboutApp != null) {
             pAboutApp.setTitle(String.format(getString(R.string.about_android), getString(R.string.app_name)));
@@ -583,10 +383,240 @@ public class Preferences extends PreferenceActivity
                 preferenceCategoryAbout.removePreference(privacyPreference);
             }
         }
+    }
 
-        loadExternalSettingLinks(preferenceCategoryMore);
+    private void setupDetailsCategory(int accentColor, PreferenceScreen preferenceScreen) {
+        PreferenceCategory preferenceCategoryDetails = (PreferenceCategory) findPreference("details");
+        preferenceCategoryDetails.setTitle(ThemeUtils.getColoredTitle(getString(R.string.prefs_category_details),
+                accentColor));
+
+        boolean fPassCodeEnabled = getResources().getBoolean(R.bool.passcode_enabled);
+        pCode = (SwitchPreference) findPreference(PassCodeActivity.PREFERENCE_SET_PASSCODE);
+        if (pCode != null && fPassCodeEnabled) {
+            pCode.setOnPreferenceChangeListener(new OnPreferenceChangeListener() {
+                @Override
+                public boolean onPreferenceChange(Preference preference, Object newValue) {
+                    Intent i = new Intent(getApplicationContext(), PassCodeActivity.class);
+                    Boolean incoming = (Boolean) newValue;
+
+                    i.setAction(
+                            incoming ? PassCodeActivity.ACTION_REQUEST_WITH_RESULT :
+                                    PassCodeActivity.ACTION_CHECK_WITH_RESULT
+                    );
+
+                    startActivityForResult(i, incoming ? ACTION_REQUEST_PASSCODE :
+                            ACTION_CONFIRM_PASSCODE);
+
+                    // Don't update just yet, we will decide on it in onActivityResult
+                    return false;
+                }
+            });
+        } else {
+            preferenceCategoryDetails.removePreference(pCode);
+        }
+
+        boolean fPrintEnabled = getResources().getBoolean(R.bool.fingerprint_enabled);
+        fPrint = (SwitchPreference) findPreference(PREFERENCE_USE_FINGERPRINT);
+        if (fPrint != null) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                if (FingerprintActivity.isFingerprintCapable(MainApp.getAppContext()) && fPrintEnabled) {
+                    fPrint.setOnPreferenceChangeListener(new OnPreferenceChangeListener() {
+                        @Override
+                        public boolean onPreferenceChange(Preference preference, Object newValue) {
+                            Boolean incoming = (Boolean) newValue;
+
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                                if (FingerprintActivity.isFingerprintReady(MainApp.getAppContext())) {
+                                    SharedPreferences appPrefs =
+                                            PreferenceManager.getDefaultSharedPreferences(getApplicationContext());
+                                    SharedPreferences.Editor editor = appPrefs.edit();
+                                    editor.putBoolean("use_fingerprint", incoming);
+                                    editor.apply();
+                                    return true;
+                                } else {
+                                    if (incoming) {
+                                        Toast.makeText(
+                                                MainApp.getAppContext(),
+                                                R.string.prefs_fingerprint_notsetup,
+                                                Toast.LENGTH_LONG)
+                                                .show();
+                                        fPrint.setChecked(false);
+                                    }
+                                    SharedPreferences appPrefs =
+                                            PreferenceManager.getDefaultSharedPreferences(getApplicationContext());
+                                    SharedPreferences.Editor editor = appPrefs.edit();
+                                    editor.putBoolean("use_fingerprint", false);
+                                    editor.apply();
+                                    return false;
+                                }
+                            } else {
+                                return false;
+                            }
+                        }
+                    });
+                    if (!FingerprintActivity.isFingerprintReady(MainApp.getAppContext())) {
+                        fPrint.setChecked(false);
+                    }
+
+                } else {
+                    preferenceCategoryDetails.removePreference(fPrint);
+                }
+            } else {
+                preferenceCategoryDetails.removePreference(fPrint);
+            }
+        }
+
+        boolean fShowHiddenFilesEnabled = getResources().getBoolean(R.bool.show_hidden_files_enabled);
+        mShowHiddenFiles = (SwitchPreference) findPreference("show_hidden_files");
+
+        if (fShowHiddenFilesEnabled) {
+            mShowHiddenFiles.setOnPreferenceClickListener(new OnPreferenceClickListener() {
+                @Override
+                public boolean onPreferenceClick(Preference preference) {
+                    SharedPreferences appPrefs =
+                            PreferenceManager.getDefaultSharedPreferences(getApplicationContext());
+                    SharedPreferences.Editor editor = appPrefs.edit();
+                    editor.putBoolean("show_hidden_files_pref", mShowHiddenFiles.isChecked());
+                    editor.apply();
+                    return true;
+                }
+            });
+        } else {
+            preferenceCategoryDetails.removePreference(mShowHiddenFiles);
+        }
+
+        mExpertMode = (SwitchPreference) findPreference("expert_mode");
+
+        if (getResources().getBoolean(R.bool.syncedFolder_light)) {
+            preferenceCategoryDetails.removePreference(mExpertMode);
+        } else {
+            mExpertMode = (SwitchPreference) findPreference("expert_mode");
+            mExpertMode.setOnPreferenceClickListener(new OnPreferenceClickListener() {
+                @Override
+                public boolean onPreferenceClick(Preference preference) {
+                    SharedPreferences appPrefs =
+                            PreferenceManager.getDefaultSharedPreferences(getApplicationContext());
+                    SharedPreferences.Editor editor = appPrefs.edit();
+                    editor.putBoolean("expert_mode", mExpertMode.isChecked());
+                    editor.apply();
+                    return true;
+                }
+            });
+        }
+
+        if (!fShowHiddenFilesEnabled && !fPrintEnabled && !fPassCodeEnabled) {
+            preferenceScreen.removePreference(preferenceCategoryDetails);
+        }
+    }
+
+    private void setupAutoUploadCategory(int accentColor, PreferenceScreen preferenceScreen) {
+        PreferenceCategory preferenceCategorySyncedFolders =
+                (PreferenceCategory) findPreference("synced_folders_category");
+        preferenceCategorySyncedFolders.setTitle(ThemeUtils.getColoredTitle(getString(R.string.drawer_synced_folders),
+                accentColor));
+
+        if (!getResources().getBoolean(R.bool.syncedFolder_light)) {
+            preferenceScreen.removePreference(preferenceCategorySyncedFolders);
+        } else {
+            // Upload on WiFi
+            final ArbitraryDataProvider arbitraryDataProvider = new ArbitraryDataProvider(getContentResolver());
+            final Account account = AccountUtils.getCurrentOwnCloudAccount(getApplicationContext());
+
+            final SwitchPreference pUploadOnWifiCheckbox = (SwitchPreference) findPreference("synced_folder_on_wifi");
+            pUploadOnWifiCheckbox.setChecked(
+                    arbitraryDataProvider.getBooleanValue(account, SYNCED_FOLDER_LIGHT_UPLOAD_ON_WIFI));
+
+            pUploadOnWifiCheckbox.setOnPreferenceClickListener(new OnPreferenceClickListener() {
+                @Override
+                public boolean onPreferenceClick(Preference preference) {
+                    arbitraryDataProvider.storeOrUpdateKeyValue(account.name, SYNCED_FOLDER_LIGHT_UPLOAD_ON_WIFI,
+                            String.valueOf(pUploadOnWifiCheckbox.isChecked()));
+
+                    return true;
+                }
+            });
+
+            Preference pSyncedFolder = findPreference("synced_folders_configure_folders");
+            if (pSyncedFolder != null) {
+                if (getResources().getBoolean(R.bool.syncedFolder_light)
+                        && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    pSyncedFolder.setOnPreferenceClickListener(new OnPreferenceClickListener() {
+                        @Override
+                        public boolean onPreferenceClick(Preference preference) {
+                            Intent syncedFoldersIntent = new Intent(getApplicationContext(), SyncedFoldersActivity.class);
+                            syncedFoldersIntent.putExtra(SyncedFoldersActivity.EXTRA_SHOW_SIDEBAR, false);
+                            startActivity(syncedFoldersIntent);
+                            return true;
+                        }
+                    });
+                } else {
+                    preferenceCategorySyncedFolders.removePreference(pSyncedFolder);
+                }
+            }
+        }
+    }
+
+    private void setupGeneralCategory(int accentColor) {
+        PreferenceCategory preferenceCategoryGeneral = (PreferenceCategory) findPreference("general");
+        preferenceCategoryGeneral.setTitle(ThemeUtils.getColoredTitle(getString(R.string.prefs_category_general),
+                accentColor));
+
+        mPrefStoragePath = (ListPreference) findPreference(PreferenceKeys.STORAGE_PATH);
+        if (mPrefStoragePath != null) {
+            StoragePoint[] storageOptions = DataStorageProvider.getInstance().getAvailableStoragePoints();
+            String[] entries = new String[storageOptions.length];
+            String[] values = new String[storageOptions.length];
+            for (int i = 0; i < storageOptions.length; ++i) {
+                entries[i] = storageOptions[i].getDescription();
+                values[i] = storageOptions[i].getPath();
+            }
+            mPrefStoragePath.setEntries(entries);
+            mPrefStoragePath.setEntryValues(values);
+
+            mPrefStoragePath.setOnPreferenceChangeListener(new OnPreferenceChangeListener() {
+                @Override
+                public boolean onPreferenceChange(Preference preference, Object newValue) {
+                    String newPath = (String) newValue;
+                    if (mStoragePath.equals(newPath)) {
+                        return true;
+                    }
+
+                    StorageMigration storageMigration = new StorageMigration(Preferences.this, mStoragePath, newPath);
+
+                    storageMigration.setStorageMigrationProgressListener(Preferences.this);
+
+                    storageMigration.migrate();
+
+                    return false;
+                }
+            });
+        }
 
         loadStoragePath();
+    }
+
+    private void setupActionBar() {
+        ActionBar actionBar = getDelegate().getSupportActionBar();
+        if (actionBar != null) {
+            actionBar.setDisplayHomeAsUpEnabled(true);
+            ThemeUtils.setColoredTitle(actionBar, getString(R.string.actionbar_settings));
+            actionBar.setBackgroundDrawable(new ColorDrawable(ThemeUtils.primaryColor()));
+
+            Drawable backArrow = getResources().getDrawable(R.drawable.ic_arrow_back);
+            actionBar.setHomeAsUpIndicator(ThemeUtils.tintDrawable(backArrow, ThemeUtils.fontColor()));
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            getWindow().setStatusBarColor(ThemeUtils.primaryDarkColor());
+        }
+
+        // For adding content description tag to a title field in the action bar
+        int actionBarTitleId = getResources().getIdentifier("action_bar_title", "id", "android");
+        View actionBarTitleView = getWindow().getDecorView().findViewById(actionBarTitleId);
+        if (actionBarTitleView != null) {    // it's null in Android 2.x
+            getWindow().getDecorView().findViewById(actionBarTitleId).
+                    setContentDescription(getString(R.string.actionbar_settings));
+        }
     }
 
     private void launchDavDroidLogin()
