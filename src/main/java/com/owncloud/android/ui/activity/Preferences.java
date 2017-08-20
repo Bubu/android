@@ -83,7 +83,8 @@ public class Preferences extends PreferenceActivity
 
     private static final String TAG = Preferences.class.getSimpleName();
 
-    public final static String PREFERENCE_USE_FINGERPRINT = "use_fingerprint";
+    public static final String PREFERENCE_USE_FINGERPRINT = "use_fingerprint";
+    public static final String PREFERENCE_EXPERT_MODE = "expert_mode";
 
     private static final String SCREEN_NAME = "Settings";
 
@@ -304,7 +305,7 @@ public class Preferences extends PreferenceActivity
                 PreferenceManager.getDefaultSharedPreferences(getApplicationContext());
 
         boolean loggerEnabled = getResources().getBoolean(R.bool.logger_enabled) || BuildConfig.DEBUG ||
-                appPrefs.getBoolean("expert_mode", false);
+                appPrefs.getBoolean(PREFERENCE_EXPERT_MODE, false);
         Preference pLogger = findPreference("logger");
         if (pLogger != null) {
             if (loggerEnabled) {
@@ -485,19 +486,19 @@ public class Preferences extends PreferenceActivity
             preferenceCategoryDetails.removePreference(mShowHiddenFiles);
         }
 
-        mExpertMode = (SwitchPreference) findPreference("expert_mode");
+        mExpertMode = (SwitchPreference) findPreference(PREFERENCE_EXPERT_MODE);
 
         if (getResources().getBoolean(R.bool.syncedFolder_light)) {
             preferenceCategoryDetails.removePreference(mExpertMode);
         } else {
-            mExpertMode = (SwitchPreference) findPreference("expert_mode");
+            mExpertMode = (SwitchPreference) findPreference(PREFERENCE_EXPERT_MODE);
             mExpertMode.setOnPreferenceClickListener(new OnPreferenceClickListener() {
                 @Override
                 public boolean onPreferenceClick(Preference preference) {
                     SharedPreferences appPrefs =
                             PreferenceManager.getDefaultSharedPreferences(getApplicationContext());
                     SharedPreferences.Editor editor = appPrefs.edit();
-                    editor.putBoolean("expert_mode", mExpertMode.isChecked());
+                    editor.putBoolean(PREFERENCE_EXPERT_MODE, mExpertMode.isChecked());
                     editor.apply();
                     return true;
                 }
